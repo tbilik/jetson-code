@@ -1,0 +1,11 @@
+import jetson.inference
+import jetson.utils
+
+signDetection = jetson.inference.detectNet("ssd-mobilenet-v2",
+                                           ["--model=models/signs/ssd-mobilenet.onnx",
+                                            "--labels=models/signs/labels.txt",
+                                            "--input-blob=input_0",
+                                            "--output-cvg=scores",
+                                            "--output-bbox=boxes"], threshold=0.5)
+
+
