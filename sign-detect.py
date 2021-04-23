@@ -3,6 +3,7 @@ import jetson.utils
 from PIL import Image
 import numpy as np
 import pytesseract
+import re
 
 signDetection = jetson.inference.detectNet("ssd-mobilenet-v2",
                                            ["--model=/home/tbilik/jetson-inference/python/training/detection/ssd/models/signs/ssd-mobilenet.onnx",
@@ -18,7 +19,26 @@ signDetection = jetson.inference.detectNet("ssd-mobilenet-v2",
 #                                      "--input_blob=input_0",
 #                                      "--output_blob=output_0"])
 
-input = jetson.utils.videoSource("~/speed-limit-signs/bigstock-Three-Road-Signs-119503835.jpg")
+input = jetson.utils.videoSource(sys.argv[1])
+
+signs = {
+    10: "ten",
+    15: "fifteen",
+    20: "twenty",
+    25: "twentyfive",
+    30: "thirty",
+    35: "thirtyfive",
+    40: "forty",
+    45: "fortyfive",
+    50: "fifty",
+    55: "fiftyfive",
+    60: "sixty",
+    65: "sixtyfive",
+    70: "seventy"
+    100: "stop"
+}
+    
+
 #output = jetson.utils.videoOutput("test.jpg")
 while input.IsStreaming:
     img = input.Capture()
@@ -48,7 +68,18 @@ while input.IsStreaming:
         im = np.uint8((im.reshape(im.shape[0],im.shape[1])))
         text = pytesseract.image_to_string(Image.fromarray(im))
         try:
-            speedLimit = int(re.match("(.*)SPEED(.*)LIMIT(.*)\d\d", text, re.S).group()[-2:])
+            speedLimit = 0
+            if re.match("(?i)SPEED(.*)LIMIT(.*)\d\d", text, re.S) is not None:
+                speedLimit = int(re.match("SPEED(.*)LIMIT(.*)\d\d", text, re.S).group()[-2:])
+            elif re.match("(?i)\d\d(.*)MPH", text, re.S) is not None:
+                speedLimit = int(re.match("\d\d(.*)MPH", text, re.S).group()[:2])
+            elif re.match("STOP") is not None:
+                speedLimit = 100
+
+            if speedLimit in signs:
+                with open("/home/tbilik/display_fifo","w") as fp:
+                    fp.write("B" + signs[speedLimit])
+                
         except:
             print("Text isn't right")
         del temp
