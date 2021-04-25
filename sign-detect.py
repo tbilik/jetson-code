@@ -1,9 +1,13 @@
+#!/usr/bin/python3
 import jetson.inference
 import jetson.utils
 from PIL import Image
 import numpy as np
 import pytesseract
 import re
+import sys
+
+pytesseract.pytesseract.tesseract_cmd = "/home/tbilik/local/bin/tesseract"
 
 signDetection = jetson.inference.detectNet("ssd-mobilenet-v2",
                                            ["--model=/home/tbilik/jetson-inference/python/training/detection/ssd/models/signs/ssd-mobilenet.onnx",
@@ -19,7 +23,12 @@ signDetection = jetson.inference.detectNet("ssd-mobilenet-v2",
 #                                      "--input_blob=input_0",
 #                                      "--output_blob=output_0"])
 
-input = jetson.utils.videoSource(sys.argv[1])
+
+if sys.argv[1] == "camera":
+    input = jetson.utils.videoSource("csi://0",
+                                     ["--input-width=1920","--input-height=1080"])
+else:
+    input = jetson.utils.videoSource()
 
 signs = {
     10: "ten",
@@ -34,7 +43,7 @@ signs = {
     55: "fiftyfive",
     60: "sixty",
     65: "sixtyfive",
-    70: "seventy"
+    70: "seventy",
     100: "stop"
 }
     
@@ -57,23 +66,40 @@ while input.IsStreaming:
         top = int(detection.Top)
         right = int(detection.Right)
         bottom = int(detection.Bottom)
-    
-        temp = jetson.utils.cudaAllocMapped(width=right-left,height=bottom-top,format="gray8")
-        jetson.utils.cudaCrop(img_grayscale,temp,(left,top,right,bottom))
+
+        crop_factor = 0.9
+        
+        crop_border = (
+            int((1.0 - crop_factor) * 0.5 * (right-left)),
+            int((1.0 - crop_factor) * 0.5 * (bottom-top)))
+        
+        crop_roi = (
+            left + crop_border[0],
+            top + crop_border[1],
+            right - crop_border[0],
+            bottom - crop_border[1]
+        )
+        
+        temp = jetson.utils.cudaAllocMapped(width=crop_roi[2]-crop_roi[0],height=crop_roi[3]-crop_roi[1],format="gray8")
+        jetson.utils.cudaCrop(img_grayscale,temp,crop_roi)
         #output.Render(temp)
         #class_idx, confidence = imagenet.Classify(temp)
         jetson.utils.cudaDeviceSynchronize()
         im = jetson.utils.cudaToNumpy(temp)
         #cropped = im.crop((detection.Left, detection.Top, detection.Right, detection.Bottom))
+        im = (im>128)*255
         im = np.uint8((im.reshape(im.shape[0],im.shape[1])))
-        text = pytesseract.image_to_string(Image.fromarray(im))
+        if sys.argv[1] != "camera":
+            im.save("test.jpg")
+        text = pytesseract.image_to_string(im, config="--oem 1")
+        print(text)
         try:
             speedLimit = 0
-            if re.match("(?i)SPEED(.*)LIMIT(.*)\d\d", text, re.S) is not None:
-                speedLimit = int(re.match("SPEED(.*)LIMIT(.*)\d\d", text, re.S).group()[-2:])
-            elif re.match("(?i)\d\d(.*)MPH", text, re.S) is not None:
-                speedLimit = int(re.match("\d\d(.*)MPH", text, re.S).group()[:2])
-            elif re.match("STOP") is not None:
+            if re.search("(?i)SPEED(.*)LIMIT(.*)\d\d", text, re.S) is not None:
+                speedLimit = int(re.search("(?i)(.*)SPEED(.*)LIMIT(.*)\d\d", text, re.S).group()[-2:])
+            elif re.search("(?i)\d\d(.*)MPH", text, re.S) is not None:
+                speedLimit = int(re.search("(?i)\d\d(.*)MPH", text, re.S).group()[:2])
+            elif re.search("(?i)STOP", text, re.S) is not None:
                 speedLimit = 100
 
             if speedLimit in signs:
