@@ -1,0 +1,7 @@
+#!/bin/bash
+
+sudo rfcomm --auth connect 0 00:1D:A5:00:67:FE 1 &
+cd /home/tbilik/
+sudo python3 jetson-code/display_driver.py &
+sudo python3 jetson-code/obdii.py &
+sudo python3 jetson-code/sign-detect.py camera &

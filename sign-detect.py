@@ -6,6 +6,7 @@ import numpy as np
 import pytesseract
 import re
 import sys
+import os
 
 pytesseract.pytesseract.tesseract_cmd = "/home/tbilik/local/bin/tesseract"
 
@@ -28,7 +29,7 @@ if sys.argv[1] == "camera":
     input = jetson.utils.videoSource("csi://0",
                                      ["--input-width=1920","--input-height=1080"])
 else:
-    input = jetson.utils.videoSource()
+    input = jetson.utils.videoSource(sys.argv[1])
 
 signs = {
     10: "ten",
@@ -46,7 +47,18 @@ signs = {
     70: "seventy",
     100: "stop"
 }
-    
+
+# for debugging purposes
+i = 0
+
+for img in os.listdir("testing/"):
+    try:
+        if int(img.split(".")[0]) > i:
+            i = int(img.split(".")[0])
+    except:
+        print("issue with image: " + img)
+
+i += 1
 
 #output = jetson.utils.videoOutput("test.jpg")
 while input.IsStreaming:
@@ -62,6 +74,7 @@ while input.IsStreaming:
     jetson.utils.cudaConvertColor(img, img_grayscale)
 
     for detection in detections:
+        print("traffic sign detected")
         left = int(detection.Left)
         top = int(detection.Top)
         right = int(detection.Right)
@@ -87,18 +100,23 @@ while input.IsStreaming:
         jetson.utils.cudaDeviceSynchronize()
         im = jetson.utils.cudaToNumpy(temp)
         #cropped = im.crop((detection.Left, detection.Top, detection.Right, detection.Bottom))
-        im = (im>128)*255
         im = np.uint8((im.reshape(im.shape[0],im.shape[1])))
+
+        # for testing/debugging purposes
+        Image.fromarray(im).save("testing/" + str(i) + ".jpg")
+        i += 1
+        
+        im = np.uint8((im>128)*255)
         if sys.argv[1] != "camera":
-            im.save("test.jpg")
+            Image.fromarray(im).save("test.jpg")
         text = pytesseract.image_to_string(im, config="--oem 1")
         print(text)
         try:
             speedLimit = 0
             if re.search("(?i)SPEED(.*)LIMIT(.*)\d\d", text, re.S) is not None:
                 speedLimit = int(re.search("(?i)(.*)SPEED(.*)LIMIT(.*)\d\d", text, re.S).group()[-2:])
-            elif re.search("(?i)\d\d(.*)MPH", text, re.S) is not None:
-                speedLimit = int(re.search("(?i)\d\d(.*)MPH", text, re.S).group()[:2])
+            elif re.search("(?i)\d\d(.*)M(.*)P(.*)H", text, re.S) is not None:
+                speedLimit = int(re.search("(?i)\d\d(.*)M(.*)P(.*)H", text, re.S).group()[:2])
             elif re.search("(?i)STOP", text, re.S) is not None:
                 speedLimit = 100
 

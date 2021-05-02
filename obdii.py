@@ -3,6 +3,8 @@ from obd import OBDStatus
 import time
 import math
 
+obd.logger.setLevel(obd.logging.DEBUG)
+
 def retrieveData(pid):
     return connection.query(obd.commands[pid]).value
 
@@ -22,12 +24,12 @@ connection.start()
 # approximately 2 seconds needed to stabilize connection
 time.sleep(2)
 
-while true:
+while True:
     while connection.status() != OBDStatus.CAR_CONNECTED:
         with open("/home/tbilik/display_fifo","w") as fp:
             fp.write("C")
         time.sleep(1)
     with open("/home/tbilik/display_fifo","w") as fp:
-        speed = retrieveData("SPEED").to("mph").magnitude
+        speed = int(retrieveData("SPEED").to("mph").magnitude)
         fp.write("A%d\n" % (speed,))
     time.sleep(1)
