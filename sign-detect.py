@@ -9,13 +9,16 @@ import sys
 import os
 from os import path
 
+# ocr function. It takes a Python image object as a parameter.
+# it outputs the speed lmit to the display_fifo, if there is
+# a speed limit detected.
 def ocr(imgp):
     text = pytesseract.image_to_string(imgp, config="--oem 1")
     print(text)
     try:
         speedLimit = 0
         if re.search("(?i)SPEED(.*)LIMIT(.*)\d\d", text, re.S) is not None:
-            speedLimit = int(re.search("(?i)(.*)SPEED(.*)LIMIT(.*)\d\d", text, re.S).group()[-2:])
+            speedLimit = int(re.search("(?i)(.*)SPEED(.*)LIMIT(.*?)\d\d", text, re.S).group()[-2:])
         elif re.search("(?i)\d\d(.*)M(.*)P(.*)H", text, re.S) is not None:
             speedLimit = int(re.search("(?i)\d\d(.*)M(.*)P(.*)H", text, re.S).group()[:2])
         elif re.search("(?i)STOP", text, re.S) is not None:
@@ -119,22 +122,28 @@ while demoMode or inp.IsStreaming:
             except:
                 print("File not found.")
             continue
+
+    # capture image frame
     img = inp.Capture()
 
+    # detect objects
     detections = signDetection.Detect(img, overlay="none")
 
     if len(detections) == 0:
-        continue
+        continue # continue processing frames if no objects detected
     else:
         print(str(len(detections)) + " sign(s) detected")
-        Image.fromarray(jetson.utils.cudaToNumpy(img)).save("testing/" + str(i) + ".png")
-        i += 1
-    
+        # for debugging purposes
+        # Image.fromarray(jetson.utils.cudaToNumpy(img)).save("testing/" + str(i) + ".png")
+        # i += 1
+
+    # convert image to grayscale
     img_grayscale = jetson.utils.cudaAllocMapped(width=img.width, height=img.height, format='gray8')
 
     jetson.utils.cudaConvertColor(img, img_grayscale)
 
     for detection in detections:
+        # fetch detection coordinates
         left = int(detection.Left)
         top = int(detection.Top)
         right = int(detection.Right)
@@ -166,14 +175,19 @@ while demoMode or inp.IsStreaming:
         # for testing/debugging purposes
         #Image.fromarray(im).save("testing/" + str(i) + ".jpg")
         #i += 1
-        
+
+        # do a binarize threshold on image
         im = np.uint8((im>128)*255)
+
+        # demo mode displays binarized image
         if demoMode or sys.argv[1] != "camera":
             Image.fromarray(im).save("test.png")
         if demoMode:
             sixelWriter.draw("test.png")
             sys.stdout.flush()
-        
+
+        # fork program. The parent process will continue detecting objects,
+        # while the child process will run the optical character recognition.
         pid = os.fork()
         if pid == 0:
             ocr(im)
